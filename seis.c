@@ -23,7 +23,7 @@ int main (int argc, char *argv[] ){
    MPI_File xfid, yfid, zfid;
    int nchunks = 88, csize;
    int rank, nprocs;
-   int k, l, n;
+   int k, l, n, j;
    MPI_Offset off;
    int s0, xi, yi, zi;
 
@@ -32,7 +32,11 @@ int main (int argc, char *argv[] ){
    float trbndw=0., a=0.; /* chebyshev parameters */
    char *aproto="BU";
    char *ftype="LP";
-   float hp=0., lp=15.00; /*lp=1.0*/
+   float hp=0., lp=25.00; /*lp=1.0*/
+
+   /* time-series decimation */
+   int nskip = 10;
+   int new_nt;
 
    float dt2;
 
@@ -73,15 +77,21 @@ int main (int argc, char *argv[] ){
  
    csize = nx*ny*nz / nprocs / nchunks;
 
-   /* buffers for unsorted velocities */
-   bufx = (float*) calloc(csize*nt, sizeof(float));
-   bufy = (float*) calloc(csize*nt, sizeof(float));
+   /* bufffers for unsorted velocities */
+   bufx = f(float*) calloc(csize*nt, sizeof(float));
+   bufy = f(float*) calloc(csize*nt, sizeof(float));
    bufz = (float*) calloc(csize*nt, sizeof(float));
 
    /* 2D arrays for velocities */
    x = (float**) calloc (csize, sizeof(float*));
    y = (float**) calloc (csize, sizeof(float*));
    z = (float**) calloc (csize, sizeof(float*));
+
+   /* 1d array for output */
+   new_nt = int(ceil(nt/nskip));
+   xout = (float*) calloc(new_nt, sizeof(float));
+   yout = (float*) calloc(new_nt, sizeof(float));
+   zout = (float*) calloc(new_nt, sizeof(float)); 
 
    for (l=0; l<csize; l++){
       x[l] = (float*) calloc(nt, sizeof(float));
@@ -130,12 +140,19 @@ int main (int argc, char *argv[] ){
          xapiir_(y[l], &nt, aproto, &trbndw, &a, &iord, ftype, &hp, &lp, &dt2, &npas);
          xapiir_(z[l], &nt, aproto, &trbndw, &a, &iord, ftype, &hp, &lp, &dt2, &npas);
 
+         /* decimate to desired level */
+         for (j=0; j<new_nt; j++) {
+             xbuf[j] = x[l][nskip*j];
+             ybuf[j] = y[l][nskip*j];
+             zbuf[j] = z[l][nskip*j];  
+         }
+
          /* write seismograms */
          MPI_Barrier(MPI_COMM_WORLD);
-         off = (MPI_Offset) nt * s0 * sizeof(float);
-         MPI_File_write_at_all(xfid, off, PH, csize, MPI_FLOAT, MPI_STATUS_IGNORE);
-         MPI_File_write_at_all(yfid, off, PZ, csize, MPI_FLOAT, MPI_STATUS_IGNORE);
-         MPI_File_write_at_all(zfid, off, DX, csize, MPI_FLOAT, MPI_STATUS_IGNORE);
+         off = (MPI_Offset) new_nt * s0 * sizeof(float);
+         MPI_File_write_at_all(xfid, off, xbuf, new_nt, MPI_FLOAT, MPI_STATUS_IGNORE);
+         MPI_File_write_at_all(yfid, off, ybuf, new_nt, MPI_FLOAT, MPI_STATUS_IGNORE);
+         MPI_File_write_at_all(zfid, off, zbuf, new_nt, MPI_FLOAT, MPI_STATUS_IGNORE);
       }
    }
    MPI_File_close(&hfid); 
